@@ -24,8 +24,18 @@ class FirstPersonCameraDemo {
     this.controls_ = new PointerLockControls(this.camera_, document.body);
     this.scene_.add(this.controls_.getObject());
 
+    this.raycaster_ = new THREE.Raycaster();
+
     document.addEventListener('click', () => {
-      this.controls_.lock();
+      if (this.controls_.isLocked) {
+        this.raycaster_.setFromCamera(new THREE.Vector2(), this.camera_);
+        const intersects = this.raycaster_.intersectObjects(this.scene_.children, true);
+        if (intersects.length > 0 && intersects[0].object.name == 'next-button') {
+            this.loadNextScene_();
+        }
+      } else {
+        this.controls_.lock();
+      }
     });
 
     const onKeyDown = (event) => {
@@ -45,6 +55,12 @@ class FirstPersonCameraDemo {
         case 'ArrowRight':
         case 'KeyD':
           this.moveRight = true;
+          break;
+        case 'Space':
+          this.moveUp = true;
+          break;
+        case 'ShiftLeft':
+          this.moveDown = true;
           break;
       }
     };
@@ -67,19 +83,80 @@ class FirstPersonCameraDemo {
         case 'KeyD':
           this.moveRight = false;
           break;
+        case 'Space':
+          this.moveUp = false;
+          break;
+        case 'ShiftLeft':
+          this.moveDown = false;
+          break;
       }
     };
 
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
 
-    this.velocity = new THREE.Vector3();
-    this.direction = new THREE.Vector3();
     this.moveForward = false;
     this.moveBackward = false;
     this.moveLeft = false;
     this.moveRight = false;
+    this.moveUp = false;
+    this.moveDown = false;
     this.mixers = [];
+  }
+
+  initializeScene_() {
+    const loader = new GLTFLoader();
+    loader.load('./resources/classroom/scene.gltf', (gltf) => {
+      this.scene_.add(gltf.scene);
+
+      this.camera_.position.set(-78.75, 158.84, 148.83);
+      this.camera_.lookAt(-71.27, 158.84, 374.03);
+
+      this.createWorldButton_();
+    });
+  }
+
+  loadNextScene_() {
+    // Clear existing scene
+    while(this.scene_.children.length > 0){ 
+      this.scene_.remove(this.scene_.children[0]); 
+    }
+
+    // Add lights back in
+    this.initializeLights_();
+
+    // Load new scene
+    const fbxLoader = new FBXLoader();
+    fbxLoader.load('./resources/isometric-bedroom (1)/source/cameretta.fbx', (fbx) => {
+      this.scene_.add(fbx);
+      
+      // Position camera
+      this.camera_.position.set(100, 100, 100);
+      this.camera_.lookAt(0, 0, 0);
+
+      // We don't need the pointer lock controls for the new scene
+      this.controls_.unlock();
+      this.controls_.enabled = false;
+    });
+  }
+
+  createWorldButton_() {
+    const buttonMaterial = new THREE.MeshBasicMaterial({
+        color: 0x0000ff,
+        transparent: true,
+        opacity: 0.8
+    });
+
+    this.button_ = new THREE.Mesh(
+        new THREE.PlaneGeometry(20, 10, 1, 1),
+        buttonMaterial
+    );
+    
+    this.button_.position.set(-195.81, 158.84, 386.73);
+    this.button_.lookAt(this.camera_.position);
+
+    this.button_.name = 'next-button';
+    this.scene_.add(this.button_);
   }
 
   initializeRenderer_() {
@@ -111,38 +188,6 @@ class FirstPersonCameraDemo {
     this.uiCamera_ = new THREE.OrthographicCamera(
         -1, 1, 1 * aspect, -1 * aspect, 1, 1000);
     this.uiScene_ = new THREE.Scene();
-  }
-
-  initializeScene_() {
-    const loader = new GLTFLoader();
-    loader.load('./resources/classroom/scene.gltf', (gltf) => {
-      this.scene_.add(gltf.scene);
-
-      const chairs = [];
-      gltf.scene.traverse((child) => {
-        if (child.isMesh && child.name.toLowerCase().includes('chair')) {
-          chairs.push(child);
-        }
-      });
-
-      this.loadCharacters_(chairs);
-    });
-  }
-
-  async loadCharacters_(chairs) {
-    const fbxLoader = new FBXLoader();
-
-    try {
-      
-      const playerChair = chairs[0];
-      if (playerChair) {
-        playerChair.getWorldPosition(this.camera_.position);
-        this.camera_.position.y += 160; 
-      }
-
-    } catch (error) {
-      console.error('An error occurred during character loading:', error);
-    }
   }
 
   initializeLights_() {
@@ -235,16 +280,57 @@ class FirstPersonCameraDemo {
         this.previousRAF_ = t;
       }
 
-      this.step_(t - this.previousRAF_);
+      this.step_(t, t - this.previousRAF_);
       this.threejs_.render(this.scene_, this.camera_);
       this.previousRAF_ = t;
       this.raf_();
     });
   }
 
-  step_(timeElapsed) {
+  step_(time, timeElapsed) {
     const timeElapsedS = timeElapsed * 0.001;
     this.mixers.forEach(mixer => mixer.update(timeElapsedS));
+
+    if (this.controls_.isLocked) {
+        const speed = 200.0 * timeElapsedS;
+        if (this.moveForward) {
+            this.controls_.moveForward(speed);
+        }
+        if (this.moveBackward) {
+            this.controls_.moveForward(-speed);
+        }
+        if (this.moveRight) {
+            this.controls_.moveRight(speed);
+        }
+        if (this.moveLeft) {
+            this.controls_.moveRight(-speed);
+        }
+        if (this.moveUp) {
+            this.controls_.getObject().position.y += speed;
+        }
+        if (this.moveDown) {
+            this.controls_.getObject().position.y -= speed;
+        }
+    }
+
+    if (!this.logTimer_ || time - this.logTimer_ > 1000) {
+        console.log(`Player Position: X: ${this.camera_.position.x.toFixed(2)}, Y: ${this.camera_.position.y.toFixed(2)}, Z: ${this.camera_.position.z.toFixed(2)}`);
+        this.logTimer_ = time;
+    }
+
+    this.updateInteractions_();
+  }
+
+  updateInteractions_() {
+    if (this.controls_.isLocked) {
+      this.raycaster_.setFromCamera(new THREE.Vector2(), this.camera_);
+      const intersects = this.raycaster_.intersectObjects(this.scene_.children, true);
+      if (intersects.length > 0 && intersects[0].object.name == 'next-button') {
+          this.button_.material.color.set(0x00ff00);
+      } else {
+          this.button_.material.color.set(0x0000ff);
+      }
+    }
   }
 }
 
