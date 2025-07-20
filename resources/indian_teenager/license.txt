@@ -1,0 +1,11 @@
+Model Information:
+* title:	Indian Teenager
+* source:	https://sketchfab.com/3d-models/indian-teenager-b2804b40f671431ca7b5cc53b239175e
+* author:	Pixel_Monster (https://sketchfab.com/ar.jethin)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Indian Teenager" (https://sketchfab.com/3d-models/indian-teenager-b2804b40f671431ca7b5cc53b239175e) by Pixel_Monster (https://sketchfab.com/ar.jethin) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
