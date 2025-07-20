@@ -1,6 +1,18 @@
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
 
+#crosshair {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid white;
+    transform: translate(-50%, -50%);
+    z-index: 1000;
+}
+
 body {
   overflow: hidden;
   background-color: #f0f0f0;
@@ -111,9 +123,16 @@ body {
   transition: all 0.1s ease-in-out;
 }
 
-.choice-btn:hover {
-  background-color: #c45f4a;
-  box-shadow: 2px 2px 0 #4a4a4a;
-  transform: translate(2px, 2px);
+.choice-btn:hover, .choice-btn.hovered {
+  background-color: #ffac94;
+  border-color: #fff;
+  color: #4a4a4a;
+  transform: scale(1.05);
+  box-shadow: 8px 8px 0 #4a4a4a;
+}
+
+.choice-btn[data-choice="continue"] {
+    grid-column: span 2;
+    background-color: #4a4a4a;
 }
 

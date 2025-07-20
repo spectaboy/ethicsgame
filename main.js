@@ -37,7 +37,7 @@ class FirstPersonCameraDemo {
     document.addEventListener('click', () => {
       if (this.controls_.isLocked) {
         this.raycaster_.setFromCamera(new THREE.Vector2(), this.camera_);
-        const intersects = this.raycaster_.intersectObjects(this.scene_.children, true);
+        const intersects = this.raycaster_.intersectObjects(this.cssScene_.children, true);
         if (intersects.length > 0) {
           const clickedObject = intersects[0].object;
           if (clickedObject.name.startsWith('choice-')) {
@@ -45,15 +45,20 @@ class FirstPersonCameraDemo {
             const scenario = ScenarioTree[this.currentScenario];
             const choice = scenario.choices[choiceIndex];
 
-            // Update metrics
             if (choice.metrics) {
-                this.metrics.academicStanding += choice.metrics.academicStanding || 0;
-                this.metrics.peerReputation += choice.metrics.peerReputation || 0;
-                this.metrics.integrity += choice.metrics.integrity || 0;
+              this.metrics.academicStanding += choice.metrics.academicStanding || 0;
+              this.metrics.peerReputation += choice.metrics.peerReputation || 0;
+              this.metrics.integrity += choice.metrics.integrity || 0;
             }
-
+            
             const nextScenarioId = choice.nextId;
-            this.displayScenario_(nextScenarioId);
+            const isOutcome = nextScenarioId.includes('_outcome');
+
+            if (isOutcome) {
+                this.showOutcome_(nextScenarioId);
+            } else {
+                this.displayScenario_(nextScenarioId);
+            }
           }
         }
       } else {
@@ -126,6 +131,8 @@ class FirstPersonCameraDemo {
     this.moveDown = false;
     this.mixers = [];
     this.cssScene_ = new THREE.Scene();
+    this.choiceButtons_ = [];
+    this.interactionPlanes_ = [];
   }
 
   initializeScene_() {
@@ -141,46 +148,111 @@ class FirstPersonCameraDemo {
   }
 
   loadNextScene_() {
-    // Clear existing scene
     while(this.scene_.children.length > 0){ 
       this.scene_.remove(this.scene_.children[0]); 
     }
-
-    // Add lights back in
+    while(this.cssScene_.children.length > 0){
+        this.cssScene_.remove(this.cssScene_.children[0]);
+    }
     this.initializeLights_();
 
-    // Load new scene
     const fbxLoader = new FBXLoader();
     fbxLoader.load('./resources/isometric-bedroom (1)/source/cameretta.fbx', (fbx) => {
       this.scene_.add(fbx);
       
-      // Position camera
       this.camera_.position.set(-27.35, 73.30, -17.31);
       this.camera_.lookAt(-60.61, 73.30, -15.83);
 
-      // We don't need the pointer lock controls for the new scene
       this.controls_.unlock();
-      this.controls_.enabled = false;
     });
   }
 
   displayScenario_(scenarioId) {
-    // Clear previous scenario
-    this.scene_.children.forEach(child => {
-      if (child.name.startsWith('choice-')) {
-        this.scene_.remove(child);
-      }
-    });
-    this.cssScene_.children.forEach(child => {
-        this.cssScene_.remove(child);
-    });
-
-    const scenario = ScenarioTree[scenarioId];
-    if (!scenario) {
-      console.error('Invalid scenario:', scenarioId);
-      return;
+    if (scenarioId === 'end') {
+        this.loadNextScene_();
+        return;
     }
+    this.currentScenario = scenarioId;
+    const scenario = ScenarioTree[scenarioId];
+    if (!scenario) return;
 
+    this.clearUI_();
+    
+    const { container, object } = this.createUIContainer_();
+    
+    this.populateUIGradeAndRules_(container);
+
+    const dialogueBox = this.createDialogueBox_(container);
+    
+    const situation = document.createElement('p');
+    situation.className = 'scenario-text';
+    situation.textContent = scenario.situation;
+    dialogueBox.appendChild(situation);
+
+    const choices = document.createElement('div');
+    choices.className = 'choices';
+    scenario.choices.forEach((choice, index) => {
+        const button = this.createButton_(choice.text);
+        choices.appendChild(button);
+        this.choiceButtons_.push(button);
+    });
+    dialogueBox.appendChild(choices);
+    
+    this.realignHitboxes_(container, object);
+  }
+
+  showOutcome_(outcomeId) {
+    const outcomeScenario = ScenarioTree[outcomeId];
+    if (!outcomeScenario) {
+        if (outcomeId === 'end') this.loadNextScene_();
+        return;
+    }
+    
+    this.clearUI_();
+    
+    const { container, object } = this.createUIContainer_();
+    
+    this.populateUIGradeAndRules_(container);
+
+    const dialogueBox = this.createDialogueBox_(container);
+
+    const situation = document.createElement('p');
+    situation.className = 'scenario-text';
+    situation.textContent = outcomeScenario.situation;
+    dialogueBox.appendChild(situation);
+
+    const choices = document.createElement('div');
+    choices.className = 'choices';
+    const nextButton = this.createButton_('Next');
+    nextButton.addEventListener('click', () => { // This is for debugging in-browser
+        const nextScenarioId = outcomeScenario.choices[0].nextId;
+        this.displayScenario_(nextScenarioId);
+    });
+    choices.appendChild(nextButton);
+    dialogueBox.appendChild(choices);
+    this.choiceButtons_.push(nextButton);
+
+    this.realignHitboxes_(container, object);
+  }
+
+  clearUI_() {
+    this.cssScene_.children.forEach(c => this.cssScene_.remove(c));
+    this.choiceButtons_ = [];
+    this.interactionPlanes_.forEach(p => p.parent.remove(p));
+    this.interactionPlanes_ = [];
+  }
+  
+  createUIContainer_() {
+    const container = document.createElement('div');
+    container.className = 'scene';
+    const object = new CSS3DObject(container);
+    object.position.set(-71.27, 158.84, 520.03);
+    object.lookAt(this.camera_.position);
+    this.cssScene_.add(object);
+    return { container, object };
+  }
+
+  populateUIGradeAndRules_(container) {
     const getLetterGrade = (score) => {
         if (score >= 100) return 'A+';
         if (score >= 90) return 'A';
@@ -189,19 +261,13 @@ class FirstPersonCameraDemo {
         if (score >= 30) return 'D';
         return 'F';
     };
-
     const currentGrade = getLetterGrade(this.metrics.academicStanding);
 
-    const container = document.createElement('div');
-    container.className = 'scene';
-
-    // Left panel: Current Grade
     const gradePanel = document.createElement('div');
     gradePanel.className = 'current-grade';
     gradePanel.innerHTML = `<h3>Current Grade</h3><div class="grade">${currentGrade}</div>`;
     container.appendChild(gradePanel);
 
-    // Right panel: The Ethics Game rules
     const rulesPanel = document.createElement('div');
     rulesPanel.className = 'rules-display';
     rulesPanel.innerHTML = `
@@ -215,59 +281,48 @@ class FirstPersonCameraDemo {
             </ul>
         </div>`;
     container.appendChild(rulesPanel);
+  }
 
-    // Bottom panel: Dialogue and Choices
+  createDialogueBox_(container) {
     const dialogueBox = document.createElement('div');
     dialogueBox.className = 'dialogue-box';
-    
-    const situation = document.createElement('p');
-    situation.className = 'scenario-text';
-    situation.textContent = scenario.situation;
-    dialogueBox.appendChild(situation);
-
-    const choices = document.createElement('div');
-    choices.className = 'choices';
-    dialogueBox.appendChild(choices);
     container.appendChild(dialogueBox);
+    return dialogueBox;
+  }
 
-    const choiceButtons = [];
-    scenario.choices.forEach((choice, index) => {
-        const button = document.createElement('button');
-        button.className = 'choice-btn';
-        button.textContent = choice.text;
-        choices.appendChild(button);
-        choiceButtons.push(button);
-    });
-    
-    const object = new CSS3DObject(container);
-    object.position.set(-71.27, 158.84, 574.03);
-    object.lookAt(this.camera_.position);
-    this.cssScene_.add(object);
+  createButton_(text) {
+    const button = document.createElement('button');
+    button.className = 'choice-btn';
+    button.textContent = text;
+    return button;
+  }
 
-    // Create invisible planes for interaction
+  realignHitboxes_(container, object) {
+    this.interactionPlanes_.forEach(plane => plane.parent.remove(plane));
+    this.interactionPlanes_ = [];
+
     setTimeout(() => {
         this.cssScene_.updateMatrixWorld(true);
-        choiceButtons.forEach((button, index) => {
-            const plane = new THREE.Mesh(new THREE.PlaneGeometry(button.offsetWidth, button.offsetHeight), new THREE.MeshBasicMaterial({color: 0x000000, transparent: true, opacity: 0.0, side: THREE.DoubleSide}));
-            const worldPos = new THREE.Vector3();
-            button.getBoundingClientRect(); // This is a trick to get the browser to compute the layout
-            worldPos.setFromMatrixPosition(object.matrixWorld);
-
-            const buttonPos = new THREE.Vector3(
-                button.getBoundingClientRect().left + button.offsetWidth / 2 - window.innerWidth / 2,
-                -(button.getBoundingClientRect().top + button.offsetHeight / 2 - window.innerHeight / 2),
-                0
+        this.choiceButtons_.forEach((button, index) => {
+            const planeWidth = button.offsetWidth;
+            const planeHeight = button.offsetHeight;
+            const plane = new THREE.Mesh(
+                new THREE.PlaneGeometry(planeWidth, planeHeight), 
+                new THREE.MeshBasicMaterial({color: 0x000000, transparent: true, opacity: 0.0, side: THREE.DoubleSide})
             );
+            
+            const buttonRect = button.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
 
-            worldPos.add(buttonPos);
-            plane.position.copy(worldPos);
-            plane.quaternion.copy(object.quaternion);
+            const x = (buttonRect.left - containerRect.left) + (planeWidth / 2) - (containerRect.width / 2);
+            const y = -((buttonRect.top - containerRect.top) + (planeHeight / 2) - (containerRect.height / 2));
+
+            plane.position.set(x, y, 1);
             plane.name = `choice-${index}`;
-            this.scene_.add(plane);
+            object.add(plane);
+            this.interactionPlanes_.push(plane);
         });
-    }, 100);
-
-    this.currentScenario = scenarioId;
+    }, 200);
   }
 
   initializeRenderer_() {
@@ -278,33 +333,17 @@ class FirstPersonCameraDemo {
     this.threejs_.shadowMap.type = THREE.PCFSoftShadowMap;
     this.threejs_.setPixelRatio(window.devicePixelRatio);
     this.threejs_.setSize(window.innerWidth, window.innerHeight);
-    this.threejs_.physicallyCorrectLights = true;
-    this.threejs_.outputEncoding = THREE.sRGBEncoding;
-
     document.body.appendChild(this.threejs_.domElement);
-
-    window.addEventListener('resize', () => {
-      this.onWindowResize_();
-    }, false);
-
-    const fov = 60;
-    const aspect = 1920 / 1080;
-    const near = 1.0;
-    const far = 1000.0;
-    this.camera_ = new THREE.PerspectiveCamera(fov, aspect, near, far);
-    this.camera_.position.set(0, 50, 100);
-
-    this.scene_ = new THREE.Scene();
-
-    this.uiCamera_ = new THREE.OrthographicCamera(
-        -1, 1, 1 * aspect, -1 * aspect, 1, 1000);
-    this.uiScene_ = new THREE.Scene();
 
     this.cssRenderer_ = new CSS3DRenderer();
     this.cssRenderer_.setSize(window.innerWidth, window.innerHeight);
     this.cssRenderer_.domElement.style.position = 'absolute';
     this.cssRenderer_.domElement.style.top = 0;
     document.body.appendChild(this.cssRenderer_.domElement);
+
+    this.camera_ = new THREE.PerspectiveCamera(
+        75, window.innerWidth / window.innerHeight, 1.0, 1000);
+    this.scene_ = new THREE.Scene();
   }
 
   initializeLights_() {
@@ -333,7 +372,7 @@ class FirstPersonCameraDemo {
     light.groundColor.setHSL( 0.095, 1, 0.75 );
     light.position.set(0, 4, 0);
     this.scene_.add(light);
-
+    
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     this.scene_.add(ambientLight);
   }
@@ -383,11 +422,6 @@ class FirstPersonCameraDemo {
   onWindowResize_() {
     this.camera_.aspect = window.innerWidth / window.innerHeight;
     this.camera_.updateProjectionMatrix();
-
-    this.uiCamera_.left = -this.camera_.aspect;
-    this.uiCamera_.right = this.camera_.aspect;
-    this.uiCamera_.updateProjectionMatrix();
-
     this.threejs_.setSize(window.innerWidth, window.innerHeight);
     this.cssRenderer_.setSize(window.innerWidth, window.innerHeight);
   }
@@ -408,51 +442,38 @@ class FirstPersonCameraDemo {
 
   step_(time, timeElapsed) {
     const timeElapsedS = timeElapsed * 0.001;
-    this.mixers.forEach(mixer => mixer.update(timeElapsedS));
-
+    
     if (this.controls_.isLocked) {
         const speed = 200.0 * timeElapsedS;
-        if (this.moveForward) {
-            this.controls_.moveForward(speed);
-        }
-        if (this.moveBackward) {
-            this.controls_.moveForward(-speed);
-        }
-        if (this.moveRight) {
-            this.controls_.moveRight(speed);
-        }
-        if (this.moveLeft) {
-            this.controls_.moveRight(-speed);
-        }
-        if (this.moveUp) {
-            this.controls_.getObject().position.y += speed;
-        }
-        if (this.moveDown) {
-            this.controls_.getObject().position.y -= speed;
-        }
+        if (this.moveForward) this.controls_.moveForward(speed);
+        if (this.moveBackward) this.controls_.moveForward(-speed);
+        if (this.moveRight) this.controls_.moveRight(speed);
+        if (this.moveLeft) this.controls_.moveRight(-speed);
+        if (this.moveUp) this.controls_.getObject().position.y += speed;
+        if (this.moveDown) this.controls_.getObject().position.y -= speed;
     }
 
-    if (!this.logTimer_ || time - this.logTimer_ > 1000) {
-        console.log(`Player Position: X: ${this.camera_.position.x.toFixed(2)}, Y: ${this.camera_.position.y.toFixed(2)}, Z: ${this.camera_.position.z.toFixed(2)}`);
-        this.logTimer_ = time;
+    if (this.mixers) {
+      this.mixers.map(m => m.update(timeElapsedS));
     }
-
     this.updateInteractions_();
   }
 
   updateInteractions_() {
     if (this.controls_.isLocked) {
       this.raycaster_.setFromCamera(new THREE.Vector2(), this.camera_);
-      const intersects = this.raycaster_.intersectObjects(this.scene_.children, true);
+      const intersects = this.raycaster_.intersectObjects(this.interactionPlanes_, true);
 
-      this.scene_.children.forEach(child => {
-          if (child.name.startsWith('choice-')) {
-              child.material.color.set(0x000000);
+      this.choiceButtons_.forEach(button => button.classList.remove('hovered'));
+
+      if (intersects.length > 0) {
+          const object = intersects[0].object;
+          if (object.name.startsWith('choice-')) {
+            const choiceIndex = parseInt(object.name.split('-')[1]);
+            if(this.choiceButtons_[choiceIndex]) {
+              this.choiceButtons_[choiceIndex].classList.add('hovered');
+            }
           }
-      });
-
-      if (intersects.length > 0 && intersects[0].object.name.startsWith('choice-')) {
-          intersects[0].object.material.color.set(0x00ff00);
       }
     }
   }
