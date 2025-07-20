@@ -9,6 +9,11 @@ class FirstPersonCameraDemo {
   constructor() {
     this.initialize_();
     this.currentScenario = 'exam_malpractice';
+    this.metrics = {
+      academicStanding: 50,
+      peerReputation: 50,
+      integrity: 50
+    };
   }
 
   initialize_() {
@@ -38,7 +43,16 @@ class FirstPersonCameraDemo {
           if (clickedObject.name.startsWith('choice-')) {
             const choiceIndex = parseInt(clickedObject.name.split('-')[1]);
             const scenario = ScenarioTree[this.currentScenario];
-            const nextScenarioId = scenario.choices[choiceIndex].nextId;
+            const choice = scenario.choices[choiceIndex];
+
+            // Update metrics
+            if (choice.metrics) {
+                this.metrics.academicStanding += choice.metrics.academicStanding || 0;
+                this.metrics.peerReputation += choice.metrics.peerReputation || 0;
+                this.metrics.integrity += choice.metrics.integrity || 0;
+            }
+
+            const nextScenarioId = choice.nextId;
             this.displayScenario_(nextScenarioId);
           }
         }
@@ -167,29 +181,62 @@ class FirstPersonCameraDemo {
       return;
     }
 
-    const container = document.createElement('div');
-    container.className = 'dialogue-box';
+    const getLetterGrade = (score) => {
+        if (score >= 100) return 'A+';
+        if (score >= 90) return 'A';
+        if (score >= 70) return 'B';
+        if (score >= 50) return 'C';
+        if (score >= 30) return 'D';
+        return 'F';
+    };
 
+    const currentGrade = getLetterGrade(this.metrics.academicStanding);
+
+    const container = document.createElement('div');
+    container.className = 'scene';
+
+    // Left panel: Current Grade
+    const gradePanel = document.createElement('div');
+    gradePanel.className = 'current-grade';
+    gradePanel.innerHTML = `<h3>Current Grade</h3><div class="grade">${currentGrade}</div>`;
+    container.appendChild(gradePanel);
+
+    // Right panel: The Ethics Game rules
+    const rulesPanel = document.createElement('div');
+    rulesPanel.className = 'rules-display';
+    rulesPanel.innerHTML = `
+        <h3>The Ethics Game</h3>
+        <div class="rules-text">
+            <p>Make ethical academic choices to maintain:</p>
+            <ul class="rules-list">
+                <li>🎓 Academic Standing</li>
+                <li>👥 Peer Reputation</li>
+                <li>⭐ Personal Integrity</li>
+            </ul>
+        </div>`;
+    container.appendChild(rulesPanel);
+
+    // Bottom panel: Dialogue and Choices
+    const dialogueBox = document.createElement('div');
+    dialogueBox.className = 'dialogue-box';
+    
     const situation = document.createElement('p');
     situation.className = 'scenario-text';
     situation.textContent = scenario.situation;
-    container.appendChild(situation);
+    dialogueBox.appendChild(situation);
 
     const choices = document.createElement('div');
     choices.className = 'choices';
-    container.appendChild(choices);
+    dialogueBox.appendChild(choices);
+    container.appendChild(dialogueBox);
 
+    const choiceButtons = [];
     scenario.choices.forEach((choice, index) => {
         const button = document.createElement('button');
         button.className = 'choice-btn';
         button.textContent = choice.text;
         choices.appendChild(button);
-
-        const plane = new THREE.Mesh(new THREE.PlaneGeometry(80, 20), new THREE.MeshBasicMaterial({color: 0x000000, transparent: true, opacity: 0.0}));
-        plane.position.set(-71.27, 138.84 - (index * 30), 574.03);
-        plane.lookAt(this.camera_.position);
-        plane.name = `choice-${index}`;
-        this.scene_.add(plane);
+        choiceButtons.push(button);
     });
     
     const object = new CSS3DObject(container);
@@ -197,26 +244,30 @@ class FirstPersonCameraDemo {
     object.lookAt(this.camera_.position);
     this.cssScene_.add(object);
 
+    // Create invisible planes for interaction
+    setTimeout(() => {
+        this.cssScene_.updateMatrixWorld(true);
+        choiceButtons.forEach((button, index) => {
+            const plane = new THREE.Mesh(new THREE.PlaneGeometry(button.offsetWidth, button.offsetHeight), new THREE.MeshBasicMaterial({color: 0x000000, transparent: true, opacity: 0.0, side: THREE.DoubleSide}));
+            const worldPos = new THREE.Vector3();
+            button.getBoundingClientRect(); // This is a trick to get the browser to compute the layout
+            worldPos.setFromMatrixPosition(object.matrixWorld);
+
+            const buttonPos = new THREE.Vector3(
+                button.getBoundingClientRect().left + button.offsetWidth / 2 - window.innerWidth / 2,
+                -(button.getBoundingClientRect().top + button.offsetHeight / 2 - window.innerHeight / 2),
+                0
+            );
+
+            worldPos.add(buttonPos);
+            plane.position.copy(worldPos);
+            plane.quaternion.copy(object.quaternion);
+            plane.name = `choice-${index}`;
+            this.scene_.add(plane);
+        });
+    }, 100);
+
     this.currentScenario = scenarioId;
-  }
-
-  createWorldButton_() {
-    const buttonMaterial = new THREE.MeshBasicMaterial({
-        color: 0x0000ff,
-        transparent: true,
-        opacity: 0.8
-    });
-
-    this.button_ = new THREE.Mesh(
-        new THREE.PlaneGeometry(20, 10, 1, 1),
-        buttonMaterial
-    );
-    
-    this.button_.position.set(-195.81, 158.84, 386.73);
-    this.button_.lookAt(this.camera_.position);
-
-    this.button_.name = 'next-button';
-    this.scene_.add(this.button_);
   }
 
   initializeRenderer_() {

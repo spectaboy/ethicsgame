@@ -1,59 +1,119 @@
-/* Basic styles */
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+
 body {
-    width: 100%;
-    height: 100%;
-    position: absolute;
-    background: #000000;
-    margin: 0;
-    padding: 0;
-    overscroll-behavior: none;
+  overflow: hidden;
+  background-color: #f0f0f0;
+  font-family: 'VT323', monospace;
 }
 
-#crosshair {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    border: 2px solid white;
-    transform: translate(-50%, -50%);
+.scene {
+  position: relative;
+  width: 1024px;
+  height: 576px;
+  background-size: cover;
+  background-position: center;
+  image-rendering: pixelated;
+  border: 4px solid #4a4a4a;
 }
 
-/* Ethics game styles */
+.current-grade, .rules-display {
+  position: absolute;
+  top: 20px;
+  width: 220px;
+  background-color: #ff8c6b;
+  border: 4px solid #4a4a4a;
+  padding: 10px;
+  box-shadow: 6px 6px 0 #4a4a4a;
+  text-align: center;
+}
+
+.current-grade {
+  left: 20px;
+}
+
+.rules-display {
+  right: 20px;
+}
+
+.current-grade h3, .rules-display h3 {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 16px;
+  margin: 0 0 10px 0;
+  color: #fff;
+  text-shadow: 2px 2px 0 #4a4a4a;
+}
+
+.grade {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 48px;
+  color: #fff;
+  background-color: #d96c4f;
+  border: 4px solid #4a4a4a;
+  padding: 10px;
+}
+
+.rules-text p {
+  margin: 0 0 10px 0;
+  font-size: 18px;
+  color: #4a4a4a;
+}
+
+.rules-list {
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+}
+
+.rules-list li {
+  background-color: #d96c4f;
+  border: 2px solid #4a4a4a;
+  padding: 8px;
+  margin-bottom: 5px;
+  font-size: 16px;
+  color: #fff;
+  text-align: left;
+}
+
 .dialogue-box {
-    width: 80%;
-    max-width: 800px;
-    background: rgba(0, 0, 0, 0.7);
-    color: white;
-    padding: 20px;
-    border-radius: 10px;
-    text-align: center;
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  right: 20px;
+  background-color: #ff8c6b;
+  border: 4px solid #4a4a4a;
+  padding: 15px;
+  box-shadow: 0 -6px 0 #4a4a4a;
 }
 
 .scenario-text {
-    font-size: 1.2em;
-    margin-bottom: 20px;
+  font-size: 22px;
+  color: #4a4a4a;
+  margin: 0 0 15px 0;
 }
 
 .choices {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 .choice-btn {
-    background: #4CAF50;
-    color: white;
-    padding: 15px 20px;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 1em;
-    transition: background-color 0.3s;
+  background-color: #d96c4f;
+  border: 4px solid #4a4a4a;
+  color: white;
+  padding: 10px;
+  text-align: center;
+  font-family: 'VT323', monospace;
+  font-size: 18px;
+  cursor: pointer;
+  box-shadow: 4px 4px 0 #4a4a4a;
+  transition: all 0.1s ease-in-out;
 }
 
 .choice-btn:hover {
-    background: #45a049;
+  background-color: #c45f4a;
+  box-shadow: 2px 2px 0 #4a4a4a;
+  transform: translate(2px, 2px);
 }
 
