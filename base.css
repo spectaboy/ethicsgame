@@ -11,12 +11,17 @@
     border: 2px solid white;
     transform: translate(-50%, -50%);
     z-index: 1000;
+    display: none;
 }
 
 body {
   overflow: hidden;
   background-color: #f0f0f0;
   font-family: 'VT323', monospace;
+}
+
+body.pointer-lock-mode #crosshair {
+    display: block;
 }
 
 .scene {
@@ -105,12 +110,18 @@ body {
 }
 
 .choices {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 10px;
 }
 
+.choices > .choice-btn:only-child {
+  grid-column: 1 / -1;
+}
+
 .choice-btn {
+  flex: 1 1 45%;
   background-color: #d96c4f;
   border: 4px solid #4a4a4a;
   color: white;
@@ -129,6 +140,23 @@ body {
   color: #4a4a4a;
   transform: scale(1.05);
   box-shadow: 8px 8px 0 #4a4a4a;
+}
+
+.choice-btn.disabled {
+  background-color: #9e9e9e;
+  border-color: #616161;
+  color: #e0e0e0;
+  cursor: not-allowed;
+  box-shadow: 4px 4px 0 #616161;
+  transform: none;
+}
+
+.choice-btn.disabled:hover, .choice-btn.disabled.hovered {
+  background-color: #9e9e9e;
+  border-color: #616161;
+  color: #e0e0e0;
+  transform: none;
+  box-shadow: 4px 4px 0 #616161;
 }
 
 .choice-btn[data-choice="continue"] {

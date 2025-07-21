@@ -22,6 +22,7 @@ class FirstPersonCameraDemo {
     this.initializeScene_();
     this.initializePostFX_();
     this.initializeDemo_();
+    this.currentScene = 'classroom';
 
     this.previousRAF_ = null;
     this.raf_();
@@ -32,37 +33,72 @@ class FirstPersonCameraDemo {
     this.controls_ = new PointerLockControls(this.camera_, document.body);
     this.scene_.add(this.controls_.getObject());
 
+    this.controls_.addEventListener('lock', () => {
+        document.body.classList.add('pointer-lock-mode');
+    });
+
+    this.controls_.addEventListener('unlock', () => {
+        document.body.classList.remove('pointer-lock-mode');
+    });
+
     this.raycaster_ = new THREE.Raycaster();
 
     document.addEventListener('click', () => {
-      if (this.controls_.isLocked) {
-        this.raycaster_.setFromCamera(new THREE.Vector2(), this.camera_);
-        const intersects = this.raycaster_.intersectObjects(this.cssScene_.children, true);
-        if (intersects.length > 0) {
-          const clickedObject = intersects[0].object;
-          if (clickedObject.name.startsWith('choice-')) {
-            const choiceIndex = parseInt(clickedObject.name.split('-')[1]);
-            const scenario = ScenarioTree[this.currentScenario];
-            const choice = scenario.choices[choiceIndex];
-
-            if (choice.metrics) {
-              this.metrics.academicStanding += choice.metrics.academicStanding || 0;
-              this.metrics.peerReputation += choice.metrics.peerReputation || 0;
-              this.metrics.integrity += choice.metrics.integrity || 0;
+      // If we are not in first-person mode, this click is for locking the cursor.
+      if (!this.controls_.isLocked) {
+        this.controls_.lock();
+        return;
+      }
+    
+      // If we are already locked, this click is for an in-game interaction.
+      // We perform a raycast from the center of the screen to see what is being looked at.
+      this.raycaster_.setFromCamera(new THREE.Vector2(), this.camera_);
+      const intersects = this.raycaster_.intersectObjects(this.interactionPlanes_, true);
+    
+      if (intersects.length > 0) {
+        const object = intersects[0].object;
+        if (object.name.startsWith('choice-')) {
+          const choiceIndex = parseInt(object.name.split('-')[1]);
+          if (this.choiceButtons_[choiceIndex]) {
+            console.log('--------------------');
+            console.log(`[CLICK] Interaction click detected! Current scenario: ${this.currentScenario}`);
+            const scenarioData = ScenarioTree[this.currentScenario];
+            if (!scenarioData) {
+              console.error('No scenario data found for current scenario.');
+              return;
             }
-            
-            const nextScenarioId = choice.nextId;
-            const isOutcome = nextScenarioId.includes('_outcome');
+    
+            // Case 1: The user is clicking on a choice in a main scenario.
+            if (!this.currentScenario.includes('_outcome')) {
+              console.log('[FLOW] Logic determined: This is a CHOICE click.');
+              const choice = scenarioData.choices[choiceIndex];
+              if (choice) {
+                console.log(`[DATA] Clicked choice text: "${choice.text}"`);
+                console.log(`[FLOW] Preparing to show outcome: ${choice.nextId}`);
+                if (choice.metrics) {
+                  this.metrics.academicStanding += choice.metrics.academicStanding || 0;
+                  this.metrics.peerReputation += choice.metrics.peerReputation || 0;
+                  this.metrics.integrity += choice.metrics.integrity || 0;
+                }
+                this.showOutcome_(choice.nextId);
+              }
+            }
+            // Case 2: The user is clicking "Continue..." on an outcome screen.
+            else {
+              console.log('[FLOW] Logic determined: This is a CONTINUE click.');
+              const nextScenarioId = scenarioData.choices[0].nextId;
 
-            if (isOutcome) {
-                this.showOutcome_(nextScenarioId);
-            } else {
+              if (this.currentScenario.startsWith('exam_malpractice_outcome')) {
+                console.log('[FLOW] Special case: exam_malpractice_outcome. Preparing to change scene.');
+                this.loadNextScene_();
+              } else {
+                console.log(`[FLOW] Standard continue. Preparing to display next scenario: ${nextScenarioId}`);
                 this.displayScenario_(nextScenarioId);
+              }
             }
+            console.log('--------------------');
           }
         }
-      } else {
-        this.controls_.lock();
       }
     });
 
@@ -148,6 +184,8 @@ class FirstPersonCameraDemo {
   }
 
   loadNextScene_() {
+    console.log(`%c[ACTION] loadNextScene_() called. Current scenario is: ${this.currentScenario}`, 'color: red; font-weight: bold;');
+    this.currentScene = 'bedroom';
     while(this.scene_.children.length > 0){ 
       this.scene_.remove(this.scene_.children[0]); 
     }
@@ -160,18 +198,20 @@ class FirstPersonCameraDemo {
     fbxLoader.load('./resources/isometric-bedroom (1)/source/cameretta.fbx', (fbx) => {
       this.scene_.add(fbx);
       
-      this.camera_.position.set(-27.35, 73.30, -17.31);
-      this.camera_.lookAt(-60.61, 73.30, -15.83);
-
-      this.controls_.unlock();
+      const nextScenarioId = ScenarioTree[this.currentScenario].choices[0].nextId;
+      console.log(`[EVENT] 3D model loaded. Next scenario to display is: ${nextScenarioId}`);
+      this.displayScenario_(nextScenarioId);
     });
   }
 
   displayScenario_(scenarioId) {
+    console.log(`%c[UI] displayScenario_() called with: ${scenarioId}`, 'color: blue;');
     if (scenarioId === 'end') {
+        console.log('[FLOW] Scenario is "end", calling loadNextScene_().');
         this.loadNextScene_();
         return;
     }
+    this.controls_.lock();
     this.currentScenario = scenarioId;
     const scenario = ScenarioTree[scenarioId];
     if (!scenario) return;
@@ -202,6 +242,8 @@ class FirstPersonCameraDemo {
   }
 
   showOutcome_(outcomeId) {
+    console.log(`%c[UI] showOutcome_() called with: ${outcomeId}`, 'color: green;');
+    this.currentScenario = outcomeId;
     const outcomeScenario = ScenarioTree[outcomeId];
     if (!outcomeScenario) {
         if (outcomeId === 'end') this.loadNextScene_();
@@ -223,14 +265,12 @@ class FirstPersonCameraDemo {
 
     const choices = document.createElement('div');
     choices.className = 'choices';
-    const nextButton = this.createButton_('Next');
-    nextButton.addEventListener('click', () => { // This is for debugging in-browser
-        const nextScenarioId = outcomeScenario.choices[0].nextId;
-        this.displayScenario_(nextScenarioId);
+    outcomeScenario.choices.forEach((choice, index) => {
+        const button = this.createButton_(choice.text);
+        choices.appendChild(button);
+        this.choiceButtons_.push(button);
     });
-    choices.appendChild(nextButton);
     dialogueBox.appendChild(choices);
-    this.choiceButtons_.push(nextButton);
 
     this.realignHitboxes_(container, object);
   }
@@ -246,7 +286,11 @@ class FirstPersonCameraDemo {
     const container = document.createElement('div');
     container.className = 'scene';
     const object = new CSS3DObject(container);
-    object.position.set(-71.27, 158.84, 520.03);
+    if(this.currentScene === 'classroom') {
+        object.position.set(-71.27, 158.84, 520.03);
+    } else {
+        object.position.set(-45, 100, -15.83);
+    }
     object.lookAt(this.camera_.position);
     this.cssScene_.add(object);
     return { container, object };
@@ -292,7 +336,7 @@ class FirstPersonCameraDemo {
 
   createButton_(text) {
     const button = document.createElement('button');
-    button.className = 'choice-btn';
+    button.className = 'choice-btn disabled'; // Start as disabled
     button.textContent = text;
     return button;
   }
@@ -304,23 +348,41 @@ class FirstPersonCameraDemo {
     setTimeout(() => {
         this.cssScene_.updateMatrixWorld(true);
         this.choiceButtons_.forEach((button, index) => {
-            const planeWidth = button.offsetWidth;
-            const planeHeight = button.offsetHeight;
-            const plane = new THREE.Mesh(
-                new THREE.PlaneGeometry(planeWidth, planeHeight), 
-                new THREE.MeshBasicMaterial({color: 0x000000, transparent: true, opacity: 0.0, side: THREE.DoubleSide})
-            );
-            
-            const buttonRect = button.getBoundingClientRect();
-            const containerRect = container.getBoundingClientRect();
+            button.classList.remove('disabled');
 
-            const x = (buttonRect.left - containerRect.left) + (planeWidth / 2) - (containerRect.width / 2);
-            const y = -((buttonRect.top - containerRect.top) + (planeHeight / 2) - (containerRect.height / 2));
+            // --- BRUTE FORCE FIX ---
+            // This is the special case for the "Continue" button, which is always alone.
+            if (this.choiceButtons_.length === 1) {
+              const plane = new THREE.Mesh(
+                  new THREE.PlaneGeometry(946, 46), // Use the exact size from the debug logs
+                  new THREE.MeshBasicMaterial({color: 0x000000, transparent: true, opacity: 0.0, side: THREE.DoubleSide}) // Make it invisible
+              );
+              // Manually calculated position to align with the button at the bottom of the dialog.
+              plane.position.set(0, -220, 1);
+              plane.name = `choice-${index}`;
+              object.add(plane);
+              this.interactionPlanes_.push(plane);
+            } 
+            // This is the normal case for the multiple-choice buttons, which we know works.
+            else {
+              const planeWidth = button.offsetWidth;
+              const planeHeight = button.offsetHeight;
 
-            plane.position.set(x, y, 1);
-            plane.name = `choice-${index}`;
-            object.add(plane);
-            this.interactionPlanes_.push(plane);
+              const plane = new THREE.Mesh(
+                  new THREE.PlaneGeometry(planeWidth, planeHeight), 
+                  new THREE.MeshBasicMaterial({color: 0x000000, transparent: true, opacity: 0.0, side: THREE.DoubleSide})
+              );
+              
+              const buttonRect = button.getBoundingClientRect();
+              const containerRect = container.getBoundingClientRect();
+              const x = buttonRect.left + (buttonRect.width / 2) - containerRect.left - (containerRect.width / 2);
+              const y = -(buttonRect.top + (buttonRect.height / 2) - containerRect.top - (containerRect.height / 2));
+              plane.position.set(x, y, 1);
+
+              plane.name = `choice-${index}`;
+              object.add(plane);
+              this.interactionPlanes_.push(plane);
+            }
         });
     }, 200);
   }
@@ -456,10 +518,10 @@ class FirstPersonCameraDemo {
     if (this.mixers) {
       this.mixers.map(m => m.update(timeElapsedS));
     }
-    this.updateInteractions_();
+    this.updateInteractions_(time);
   }
 
-  updateInteractions_() {
+  updateInteractions_(time) {
     if (this.controls_.isLocked) {
       this.raycaster_.setFromCamera(new THREE.Vector2(), this.camera_);
       const intersects = this.raycaster_.intersectObjects(this.interactionPlanes_, true);
