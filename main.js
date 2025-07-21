@@ -98,14 +98,19 @@ class FirstPersonCameraDemo {
 
               this.metrics.decisions.push({
                 scenarioId: this.currentScenario,
+                title: scenario.situation.substring(0, 30) + '...', // Use a snippet as title
                 choice: choice.text,
                 timeTaken: Math.round(timeSpent / 1000),
-                metricsBefore: metricsBefore,
-                metricsAfter: {
-                  academicStanding: this.metrics.academicStanding,
-                  peerReputation: this.metrics.peerReputation,
-                  integrity: this.metrics.integrity
-                }
+                context: {
+                  academicStandingBefore: metricsBefore.academicStanding,
+                  academicStandingAfter: this.metrics.academicStanding,
+                  peerReputationBefore: metricsBefore.peerReputation,
+                  peerReputationAfter: this.metrics.peerReputation,
+                  integrityBefore: metricsBefore.integrity,
+                  integrityAfter: this.metrics.integrity
+                },
+                outcome: "Choice made.",
+                notes: "Player made a decision."
               });
             }
 
@@ -301,50 +306,104 @@ class FirstPersonCameraDemo {
     this.controls_.unlock();
     this.clearUI_();
     
-    const finalMetrics = {
+    const totalDecisions = this.metrics.decisions.length;
+    const totalTimeOnDecisions = this.metrics.decisions.reduce((sum, d) => sum + d.timeTaken, 0);
+    const averageTimePerDecision = totalDecisions > 0 ? (totalTimeOnDecisions / totalDecisions).toFixed(1) : 0;
+
+    const gameData = {
       sessionId: this.sessionId,
       totalPlayTime: Math.round((Date.now() - this.startTime) / 1000),
-      finalScores: {
+      scenarios: this.metrics.decisions,
+      overallStats: {
+        averageTimePerDecision: parseFloat(averageTimePerDecision),
         academicStanding: this.metrics.academicStanding,
         peerReputation: this.metrics.peerReputation,
         integrity: this.metrics.integrity
-      },
-      decisions: this.metrics.decisions
+      }
     };
 
     try {
-      const analysis = await sendGameDataToMindStudio(finalMetrics);
-      const insights = analysis?.output?.['Overall Insight']?.content || 'No analysis available.';
-
+      this.clearUI_();
+      
       const { container } = this.createUIContainer_();
+      
+      // Display a temporary loading message inside our 3D UI while the API call is in flight.
+      container.innerHTML = `<div class="end-screen"><h2>Analyzing your journey...</h2></div>`;
+
+      const analysis = await sendGameDataToMindStudio(gameData);
+      
+      const sidebarButtons = gameData.scenarios.map((decision, index) => {
+        let cleanTitle = decision.title || `Scenario ${index + 1}`;
+        cleanTitle = cleanTitle.replace(/_/g, ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
+        return `<button class="scenario-btn" data-scenario="${index}">${cleanTitle}</button>`;
+      }).join('');
+
       container.innerHTML = `
-        <div class="end-screen">
-          <h2>Your Journey Analysis</h2>
-          <div class="final-scores">
-            <p>🎓 Academic Standing: ${finalMetrics.finalScores.academicStanding}</p>
-            <p>👥 Peer Reputation: ${finalMetrics.finalScores.peerReputation}</p>
-            <p>⭐ Integrity: ${finalMetrics.finalScores.integrity}</p>
+        <div class="analysis-scene">
+          <div class="analysis-sidebar">
+            <button class="scenario-btn overall-btn active" data-scenario="overall">OVERALL RESULTS</button>
+            ${sidebarButtons}
+            <button class="scenario-btn play-again" onclick="window.location.reload()">Play Again</button>
           </div>
-          <div class="insights-text">${insights}</div>
-          <button id="restart-btn" class="choice-btn">Play Again</button>
+          <div class="analysis-content">
+            <div class="final-metrics-panel">
+              <h2>Final Scores</h2>
+              <div class="metrics-display">
+                <p>🎓 Academic Standing: ${gameData.overallStats.academicStanding}</p>
+                <p>👥 Peer Reputation: ${gameData.overallStats.peerReputation}</p>
+                <p>⭐ Integrity: ${gameData.overallStats.integrity}</p>
+              </div>
+            </div>
+            <div id="insights-display">
+              <h2>Your Journey Analysis</h2>
+              <div class="insights-text">
+                ${analysis.result.response.overallInsight || 'No overall insights available.'}
+              </div>
+            </div>
+          </div>
         </div>
       `;
-      document.getElementById('restart-btn').addEventListener('click', () => {
-        window.location.reload();
+
+      const buttons = container.querySelectorAll('.scenario-btn');
+      buttons.forEach(button => {
+        button.addEventListener('click', (e) => {
+          buttons.forEach(btn => btn.classList.remove('active'));
+          e.target.classList.add('active');
+
+          const scenarioIndex = e.target.dataset.scenario;
+          const insightsDisplay = container.querySelector('#insights-display');
+
+          if (scenarioIndex === 'overall') {
+            insightsDisplay.innerHTML = `
+              <h2>Your Journey Analysis</h2>
+              <div class="insights-text">
+                ${analysis.result.response.overallInsight || 'No overall insights available.'}
+              </div>
+            `;
+          } else {
+            const scenario = gameData.scenarios[scenarioIndex];
+            const scenarioInsight = analysis.result.response.scenarioInsights[scenarioIndex];
+            insightsDisplay.innerHTML = `
+              <h2>${scenario.title}</h2>
+              <div class="insights-text">
+                ${scenarioInsight.insight || 'No specific insights available for this scenario.'}
+              </div>
+            `;
+          }
+        });
       });
 
     } catch (error) {
+      console.error("Error during endGame analysis display:", error);
+      this.clearUI_();
       const { container } = this.createUIContainer_();
       container.innerHTML = `
         <div class="end-screen">
           <h2>Error</h2>
           <p>Could not retrieve analysis. Please try again later.</p>
-          <button id="restart-btn" class="choice-btn">Play Again</button>
+          <button id="restart-btn" class="choice-btn" onclick="window.location.reload()">Play Again</button>
         </div>
       `;
-      document.getElementById('restart-btn').addEventListener('click', () => {
-        window.location.reload();
-      });
     }
   }
 

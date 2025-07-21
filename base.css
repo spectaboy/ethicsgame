@@ -278,6 +278,88 @@ body.pointer-lock-mode #crosshair {
   color: white;
 }
 
+.analysis-scene {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  background-color: #ff8c6b;
+  font-family: 'VT323', monospace;
+}
+
+.analysis-sidebar {
+  width: 280px;
+  background-color: #d96c4f;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  border-right: 4px solid #4a4a4a;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.analysis-content {
+  flex-grow: 1;
+  padding: 20px;
+  overflow-y: auto;
+  color: #4a4a4a;
+}
+
+.final-metrics-panel {
+  background-color: #ffac94;
+  border: 4px solid #4a4a4a;
+  padding: 15px;
+  margin-bottom: 20px;
+}
+
+.final-metrics-panel h2, #insights-display h2 {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 20px;
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: #4a4a4a;
+  text-shadow: 2px 2px 0 #fff;
+}
+
+.metrics-display p {
+  font-size: 18px;
+  margin: 5px 0;
+  color: #4a4a4a;
+}
+
+.scenario-btn {
+  background-color: #4a4a4a;
+  border: 3px solid transparent;
+  color: white;
+  padding: 12px;
+  margin-bottom: 10px;
+  text-align: left;
+  font-family: 'VT323', monospace;
+  font-size: 18px;
+  cursor: pointer;
+  width: 100%;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+}
+
+.scenario-btn:hover {
+  background-color: #6c6c6c;
+}
+
+.scenario-btn.active {
+  background-color: #fff;
+  color: #4a4a4a;
+  border-color: #4a4a4a;
+}
+
+.play-again {
+  margin-top: auto;
+  background-color: #ff5722;
+}
+
+.play-again:hover {
+  background-color: #e64a19;
+}
+
 .choices > .choice-btn:only-child {
   grid-column: 1 / -1;
 }
