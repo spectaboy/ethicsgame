@@ -231,7 +231,7 @@ class FirstPersonCameraDemo {
 
   initializeScene_() {
     const loader = new GLTFLoader();
-    loader.load('./resources/classroom/scene.gltf', (gltf) => {
+    loader.load('/resources/classroom/scene.gltf', (gltf) => {
       this.scene_.add(gltf.scene);
 
       this.camera_.position.set(-78.75, 158.84, 148.83);
@@ -253,7 +253,7 @@ class FirstPersonCameraDemo {
     this.initializeLights_();
 
     const fbxLoader = new FBXLoader();
-    fbxLoader.load('./resources/isometric-bedroom (1)/source/cameretta.fbx', (fbx) => {
+    fbxLoader.load('/resources/isometric-bedroom (1)/source/cameretta.fbx', (fbx) => {
       this.scene_.add(fbx);
 
       // Set the camera position for the bedroom scene
