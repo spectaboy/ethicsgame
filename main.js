@@ -10,11 +10,11 @@ class FirstPersonCameraDemo {
   constructor() {
     this.initialize_();
     this.currentScenario = 'exam_malpractice';
-
-    // --- Game Logic Properties ---
-    this.sessionId = 'user' + Math.random().toString(36).substr(2, 5);
     this.startTime = Date.now();
     this.decisionStartTime = null;
+    this.analysis_ = null; 
+    this.analysisSidebarEl_ = null;
+    this.analysisHitboxes_ = []; 
 
     this.metrics = {
       decisions: [],
@@ -89,7 +89,7 @@ class FirstPersonCameraDemo {
                 peerReputation: this.metrics.peerReputation,
                 integrity: this.metrics.integrity
               };
-
+              
               if (choice.metrics) {
                 this.metrics.academicStanding += choice.metrics.academicStanding || 0;
                 this.metrics.peerReputation += choice.metrics.peerReputation || 0;
@@ -119,6 +119,37 @@ class FirstPersonCameraDemo {
             } else {
               this.showOutcome_(choice.nextId);
             }
+          }
+        } else if (object.name.startsWith('analysis-')) {
+          if (!this.analysis_) return;
+          const scenarioIndex = object.name.split('-')[1];
+          const container = document.querySelector('.analysis-scene');
+          if (!container) return;
+          
+          const buttons = container.querySelectorAll('.scenario-btn');
+          buttons.forEach(btn => btn.classList.remove('active'));
+          
+          const clickedButton = container.querySelector(`[data-scenario="${scenarioIndex}"]`);
+          if (clickedButton) clickedButton.classList.add('active');
+      
+          const insightsDisplay = container.querySelector('#insights-display');
+          if (!insightsDisplay) return;
+      
+          const overallInsight = this.analysis_.result.response.overallInsight || 'No overall insights available.';
+          
+          if (scenarioIndex === 'overall') {
+            insightsDisplay.innerHTML = `
+              <h2>Your Journey Analysis</h2>
+              <div class="insights-text">${overallInsight}</div>
+            `;
+          } else {
+            const scenarioInsightData = this.analysis_.result.response.scenarioInsights[scenarioIndex];
+            const scenarioTitle = this.metrics.decisions[scenarioIndex]?.title || 'Scenario Analysis';
+            const insightText = scenarioInsightData?.insight || 'No specific insights available for this scenario.';
+            insightsDisplay.innerHTML = `
+              <h2>${scenarioTitle}</h2>
+              <div class="insights-text">${insightText}</div>
+            `;
           }
         }
       }
@@ -325,12 +356,12 @@ class FirstPersonCameraDemo {
     try {
       this.clearUI_();
       
-      const { container } = this.createUIContainer_();
+      const { container, object } = this.createUIContainer_();
       
       // Display a temporary loading message inside our 3D UI while the API call is in flight.
       container.innerHTML = `<div class="end-screen"><h2>Analyzing your journey...</h2></div>`;
 
-      const analysis = await sendGameDataToMindStudio(gameData);
+      this.analysis_ = await sendGameDataToMindStudio(gameData);
       
       const sidebarButtons = gameData.scenarios.map((decision, index) => {
         let cleanTitle = decision.title || `Scenario ${index + 1}`;
@@ -357,41 +388,14 @@ class FirstPersonCameraDemo {
             <div id="insights-display">
               <h2>Your Journey Analysis</h2>
               <div class="insights-text">
-                ${analysis.result.response.overallInsight || 'No overall insights available.'}
+                ${this.analysis_.result.response.overallInsight || 'No overall insights available.'}
               </div>
             </div>
           </div>
         </div>
       `;
-
-      const buttons = container.querySelectorAll('.scenario-btn');
-      buttons.forEach(button => {
-        button.addEventListener('click', (e) => {
-          buttons.forEach(btn => btn.classList.remove('active'));
-          e.target.classList.add('active');
-
-          const scenarioIndex = e.target.dataset.scenario;
-          const insightsDisplay = container.querySelector('#insights-display');
-
-          if (scenarioIndex === 'overall') {
-            insightsDisplay.innerHTML = `
-              <h2>Your Journey Analysis</h2>
-              <div class="insights-text">
-                ${analysis.result.response.overallInsight || 'No overall insights available.'}
-              </div>
-            `;
-          } else {
-            const scenario = gameData.scenarios[scenarioIndex];
-            const scenarioInsight = analysis.result.response.scenarioInsights[scenarioIndex];
-            insightsDisplay.innerHTML = `
-              <h2>${scenario.title}</h2>
-              <div class="insights-text">
-                ${scenarioInsight.insight || 'No specific insights available for this scenario.'}
-              </div>
-            `;
-          }
-        });
-      });
+      
+      this.realignAnalysisHitboxes_(container, object);
 
     } catch (error) {
       console.error("Error during endGame analysis display:", error);
@@ -535,6 +539,83 @@ class FirstPersonCameraDemo {
     }, 500);
   }
 
+  realignAnalysisHitboxes_(container, object) {
+    this.hitboxGroup_.clear();
+    this.analysisHitboxes_ = [];
+    this.analysisSidebarEl_ = container.querySelector('.analysis-sidebar');
+
+    setTimeout(() => {
+        this.hitboxGroup_.position.copy(object.position);
+        this.hitboxGroup_.quaternion.copy(object.quaternion);
+        
+        const buttons = this.analysisSidebarEl_.querySelectorAll('.scenario-btn:not(.play-again)');
+        const planeMat = new THREE.MeshBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.6, side: THREE.DoubleSide });
+
+        buttons.forEach(button => {
+            const plane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), planeMat); // Start with size 1, will be updated
+            plane.name = `analysis-${button.dataset.scenario}`;
+            this.hitboxGroup_.add(plane);
+            this.analysisHitboxes_.push({ plane, button });
+        });
+        
+        const scrollPlaneMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+        const sidebarRect = this.analysisSidebarEl_.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const scrollHitboxWidth = sidebarRect.width;
+        const x_center_sidebar = (sidebarRect.left + sidebarRect.width/2) - (containerRect.left + containerRect.width/2);
+
+        const topScrollPlane = new THREE.Mesh(new THREE.PlaneGeometry(scrollHitboxWidth, 50), scrollPlaneMat);
+        topScrollPlane.position.set(x_center_sidebar, (containerRect.height / 2) - 25, 2);
+        topScrollPlane.name = 'scroll-up';
+        this.hitboxGroup_.add(topScrollPlane);
+
+        const bottomScrollPlane = new THREE.Mesh(new THREE.PlaneGeometry(scrollHitboxWidth, 50), scrollPlaneMat);
+        bottomScrollPlane.position.set(x_center_sidebar, (-containerRect.height / 2) + 25, 2);
+        bottomScrollPlane.name = 'scroll-down';
+        this.hitboxGroup_.add(bottomScrollPlane);
+
+        this.updateAnalysisHitboxPositions_(); // Initial alignment
+    }, 500);
+  }
+
+  updateAnalysisHitboxPositions_() {
+    if (!this.analysisSidebarEl_ || this.analysisHitboxes_.length === 0) return;
+    
+    const container = this.analysisSidebarEl_.parentElement; // This is the main .analysis-scene div
+    const scrollOffset = this.analysisSidebarEl_.scrollTop;
+
+    this.analysisHitboxes_.forEach(item => {
+      const { plane, button } = item;
+
+      // Use offset properties which are stable and not affected by CSS 3D transforms.
+      const hitboxWidth = button.offsetWidth;
+      const hitboxHeight = button.offsetHeight;
+      
+      // Position relative to the container's top-left corner
+      const x_in_container = button.offsetLeft + (hitboxWidth / 2);
+      const y_in_container = button.offsetTop - scrollOffset + (hitboxHeight / 2);
+      
+      // Now, convert this to be relative to the container's center (which is the origin of the hitboxGroup)
+      const x = x_in_container - (container.offsetWidth / 2);
+      const y = -(y_in_container - (container.offsetHeight / 2));
+      
+      plane.scale.set(hitboxWidth, hitboxHeight, 1);
+      plane.position.set(x, y, 2); // Use z=2 to ensure it's in front of scroll hitboxes
+
+      // Visibility check based on scroll position
+      const sidebarTop = this.analysisSidebarEl_.scrollTop;
+      const sidebarBottom = sidebarTop + this.analysisSidebarEl_.offsetHeight;
+      const buttonTop = button.offsetTop;
+      const buttonBottom = buttonTop + button.offsetHeight;
+      
+      if (buttonBottom < sidebarTop || buttonTop > sidebarBottom) {
+        plane.visible = false;
+      } else {
+        plane.visible = true;
+      }
+    });
+  }
+
   initializeRenderer_() {
     this.threejs_ = new THREE.WebGLRenderer({
       antialias: false,
@@ -667,6 +748,7 @@ class FirstPersonCameraDemo {
       this.mixers.map(m => m.update(timeElapsedS));
     }
     this.updateInteractions_(time);
+    this.updateAnalysisHitboxPositions_();
   }
 
   updateInteractions_(time) {
@@ -675,6 +757,18 @@ class FirstPersonCameraDemo {
       
       const targets = this.hitboxGroup_.children;
       const intersects = this.raycaster_.intersectObjects(targets, true);
+
+      // --- Handle continuous scroll on hover ---
+      const isHoveringScrollUp = intersects.some(intersect => intersect.object.name === 'scroll-up');
+      const isHoveringScrollDown = intersects.some(intersect => intersect.object.name === 'scroll-down');
+      if (this.analysisSidebarEl_) {
+        if (isHoveringScrollUp) {
+          this.analysisSidebarEl_.scrollTop -= 5;
+        } else if (isHoveringScrollDown) {
+          this.analysisSidebarEl_.scrollTop += 5;
+        }
+      }
+      // --- End scroll logic ---
 
       this.choiceButtons_.forEach(button => button.classList.remove('hovered'));
 
