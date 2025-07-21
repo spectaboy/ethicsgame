@@ -4,12 +4,20 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { CSS3DRenderer, CSS3DObject } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
 import { ScenarioTree } from './ethics-ed-game/js/scenarios.js';
+import { sendGameDataToMindStudio } from './js/analysis.js';
 
 class FirstPersonCameraDemo {
   constructor() {
     this.initialize_();
     this.currentScenario = 'exam_malpractice';
+
+    // --- Game Logic Properties ---
+    this.sessionId = 'user' + Math.random().toString(36).substr(2, 5);
+    this.startTime = Date.now();
+    this.decisionStartTime = null;
+
     this.metrics = {
+      decisions: [],
       academicStanding: 50,
       peerReputation: 50,
       integrity: 50
@@ -30,73 +38,82 @@ class FirstPersonCameraDemo {
   }
 
   initializeDemo_() {
+    const menu = document.getElementById('menu');
+    const menuContent = document.getElementById('menu-content');
+
     this.controls_ = new PointerLockControls(this.camera_, document.body);
-    this.scene_.add(this.controls_.getObject());
+    this.scene_.add(this.controls_.getObject()); // This line is critical and must be restored.
 
     this.controls_.addEventListener('lock', () => {
-        document.body.classList.add('pointer-lock-mode');
+        menu.style.display = 'none';
+        document.body.classList.add('pointer-lock-mode'); // Restore this for the crosshair
     });
 
     this.controls_.addEventListener('unlock', () => {
-        document.body.classList.remove('pointer-lock-mode');
+        menuContent.innerHTML = '<h1>Paused</h1><p>Click to Resume</p>';
+        menu.style.display = 'flex';
+        document.body.classList.remove('pointer-lock-mode'); // Restore this for the crosshair
+    });
+    
+    menu.addEventListener('click', () => {
+      this.controls_.lock();
     });
 
     this.raycaster_ = new THREE.Raycaster();
 
     document.addEventListener('click', () => {
-      // If we are not in first-person mode, this click is for locking the cursor.
       if (!this.controls_.isLocked) {
         this.controls_.lock();
         return;
       }
-    
-      // If we are already locked, this click is for an in-game interaction.
-      // We perform a raycast from the center of the screen to see what is being looked at.
+
       this.raycaster_.setFromCamera(new THREE.Vector2(), this.camera_);
-      const intersects = this.raycaster_.intersectObjects(this.interactionPlanes_, true);
-    
+      
+      const targets = this.hitboxGroup_.children;
+      const intersects = this.raycaster_.intersectObjects(targets, true);
+
       if (intersects.length > 0) {
         const object = intersects[0].object;
         if (object.name.startsWith('choice-')) {
           const choiceIndex = parseInt(object.name.split('-')[1]);
           if (this.choiceButtons_[choiceIndex]) {
-            console.log('--------------------');
-            console.log(`[CLICK] Interaction click detected! Current scenario: ${this.currentScenario}`);
-            const scenarioData = ScenarioTree[this.currentScenario];
-            if (!scenarioData) {
-              console.error('No scenario data found for current scenario.');
-              return;
-            }
-    
-            // Case 1: The user is clicking on a choice in a main scenario.
-            if (!this.currentScenario.includes('_outcome')) {
-              console.log('[FLOW] Logic determined: This is a CHOICE click.');
-              const choice = scenarioData.choices[choiceIndex];
-              if (choice) {
-                console.log(`[DATA] Clicked choice text: "${choice.text}"`);
-                console.log(`[FLOW] Preparing to show outcome: ${choice.nextId}`);
-                if (choice.metrics) {
-                  this.metrics.academicStanding += choice.metrics.academicStanding || 0;
-                  this.metrics.peerReputation += choice.metrics.peerReputation || 0;
-                  this.metrics.integrity += choice.metrics.integrity || 0;
-                }
-                this.showOutcome_(choice.nextId);
-              }
-            }
-            // Case 2: The user is clicking "Continue..." on an outcome screen.
-            else {
-              console.log('[FLOW] Logic determined: This is a CONTINUE click.');
-              const nextScenarioId = scenarioData.choices[0].nextId;
+            const timeSpent = Date.now() - this.decisionStartTime;
+            const scenario = ScenarioTree[this.currentScenario];
+            const choice = scenario.choices[choiceIndex];
 
-              if (this.currentScenario.startsWith('exam_malpractice_outcome')) {
-                console.log('[FLOW] Special case: exam_malpractice_outcome. Preparing to change scene.');
-                this.loadNextScene_();
-              } else {
-                console.log(`[FLOW] Standard continue. Preparing to display next scenario: ${nextScenarioId}`);
-                this.displayScenario_(nextScenarioId);
+            const isContinueChoice = choice.text.toLowerCase().includes('continue');
+
+            if (!isContinueChoice) {
+              const metricsBefore = {
+                academicStanding: this.metrics.academicStanding,
+                peerReputation: this.metrics.peerReputation,
+                integrity: this.metrics.integrity
+              };
+
+              if (choice.metrics) {
+                this.metrics.academicStanding += choice.metrics.academicStanding || 0;
+                this.metrics.peerReputation += choice.metrics.peerReputation || 0;
+                this.metrics.integrity += choice.metrics.integrity || 0;
               }
+
+              this.metrics.decisions.push({
+                scenarioId: this.currentScenario,
+                choice: choice.text,
+                timeTaken: Math.round(timeSpent / 1000),
+                metricsBefore: metricsBefore,
+                metricsAfter: {
+                  academicStanding: this.metrics.academicStanding,
+                  peerReputation: this.metrics.peerReputation,
+                  integrity: this.metrics.integrity
+                }
+              });
             }
-            console.log('--------------------');
+
+            if (choice.nextId === 'end') {
+              this.endGame_();
+            } else {
+              this.showOutcome_(choice.nextId);
+            }
           }
         }
       }
@@ -125,6 +142,10 @@ class FirstPersonCameraDemo {
           break;
         case 'ShiftLeft':
           this.moveDown = true;
+          break;
+        case 'KeyP':
+          const pos = this.camera_.position;
+          console.log(`position ${pos.x.toFixed(2)} ${pos.y.toFixed(2)} ${pos.z.toFixed(2)}`);
           break;
       }
     };
@@ -168,7 +189,8 @@ class FirstPersonCameraDemo {
     this.mixers = [];
     this.cssScene_ = new THREE.Scene();
     this.choiceButtons_ = [];
-    this.interactionPlanes_ = [];
+    this.hitboxGroup_ = new THREE.Group();
+    this.scene_.add(this.hitboxGroup_);
   }
 
   initializeScene_() {
@@ -197,21 +219,16 @@ class FirstPersonCameraDemo {
     const fbxLoader = new FBXLoader();
     fbxLoader.load('./resources/isometric-bedroom (1)/source/cameretta.fbx', (fbx) => {
       this.scene_.add(fbx);
+
+      // Set the camera position for the bedroom scene
+      this.camera_.position.set(-32.11, 62.32, -27.35);
       
       const nextScenarioId = ScenarioTree[this.currentScenario].choices[0].nextId;
-      console.log(`[EVENT] 3D model loaded. Next scenario to display is: ${nextScenarioId}`);
       this.displayScenario_(nextScenarioId);
     });
   }
 
   displayScenario_(scenarioId) {
-    console.log(`%c[UI] displayScenario_() called with: ${scenarioId}`, 'color: blue;');
-    if (scenarioId === 'end') {
-        console.log('[FLOW] Scenario is "end", calling loadNextScene_().');
-        this.loadNextScene_();
-        return;
-    }
-    this.controls_.lock();
     this.currentScenario = scenarioId;
     const scenario = ScenarioTree[scenarioId];
     if (!scenario) return;
@@ -239,14 +256,19 @@ class FirstPersonCameraDemo {
     dialogueBox.appendChild(choices);
     
     this.realignHitboxes_(container, object);
+    this.decisionStartTime = Date.now(); // Start decision timer
   }
 
   showOutcome_(outcomeId) {
-    console.log(`%c[UI] showOutcome_() called with: ${outcomeId}`, 'color: green;');
+    if (outcomeId === 'end') {
+        this.endGame_();
+        return;
+    }
+    
+    this.controls_.lock();
     this.currentScenario = outcomeId;
     const outcomeScenario = ScenarioTree[outcomeId];
     if (!outcomeScenario) {
-        if (outcomeId === 'end') this.loadNextScene_();
         return;
     }
     
@@ -271,27 +293,87 @@ class FirstPersonCameraDemo {
         this.choiceButtons_.push(button);
     });
     dialogueBox.appendChild(choices);
-
+    
     this.realignHitboxes_(container, object);
+  }
+
+  async endGame_() {
+    this.controls_.unlock();
+    this.clearUI_();
+    
+    const finalMetrics = {
+      sessionId: this.sessionId,
+      totalPlayTime: Math.round((Date.now() - this.startTime) / 1000),
+      finalScores: {
+        academicStanding: this.metrics.academicStanding,
+        peerReputation: this.metrics.peerReputation,
+        integrity: this.metrics.integrity
+      },
+      decisions: this.metrics.decisions
+    };
+
+    try {
+      const analysis = await sendGameDataToMindStudio(finalMetrics);
+      const insights = analysis?.output?.['Overall Insight']?.content || 'No analysis available.';
+
+      const { container } = this.createUIContainer_();
+      container.innerHTML = `
+        <div class="end-screen">
+          <h2>Your Journey Analysis</h2>
+          <div class="final-scores">
+            <p>🎓 Academic Standing: ${finalMetrics.finalScores.academicStanding}</p>
+            <p>👥 Peer Reputation: ${finalMetrics.finalScores.peerReputation}</p>
+            <p>⭐ Integrity: ${finalMetrics.finalScores.integrity}</p>
+          </div>
+          <div class="insights-text">${insights}</div>
+          <button id="restart-btn" class="choice-btn">Play Again</button>
+        </div>
+      `;
+      document.getElementById('restart-btn').addEventListener('click', () => {
+        window.location.reload();
+      });
+
+    } catch (error) {
+      const { container } = this.createUIContainer_();
+      container.innerHTML = `
+        <div class="end-screen">
+          <h2>Error</h2>
+          <p>Could not retrieve analysis. Please try again later.</p>
+          <button id="restart-btn" class="choice-btn">Play Again</button>
+        </div>
+      `;
+      document.getElementById('restart-btn').addEventListener('click', () => {
+        window.location.reload();
+      });
+    }
   }
 
   clearUI_() {
     this.cssScene_.children.forEach(c => this.cssScene_.remove(c));
     this.choiceButtons_ = [];
-    this.interactionPlanes_.forEach(p => p.parent.remove(p));
-    this.interactionPlanes_ = [];
+    this.hitboxGroup_.clear();
   }
   
   createUIContainer_() {
     const container = document.createElement('div');
     container.className = 'scene';
     const object = new CSS3DObject(container);
-    if(this.currentScene === 'classroom') {
-        object.position.set(-71.27, 158.84, 520.03);
-    } else {
-        object.position.set(-45, 100, -15.83);
+
+    if (this.currentScene === 'classroom') {
+      object.position.set(-71.27, 158.84, 520.03);
+      object.lookAt(this.camera_.position);
+      // Sync the hitbox container to the UI's transform
+      this.hitboxGroup_.position.copy(object.position);
+      this.hitboxGroup_.quaternion.copy(object.quaternion);
+    } else { // This will now apply to bedroom
+      container.classList.add('bedroom-scene');
+      object.position.set(-65.31, 345.56, -28.84);
+      object.lookAt(this.camera_.position);
+      // Sync the bedroom's mirror container to the UI's transform
+      this.hitboxGroup_.position.copy(object.position);
+      this.hitboxGroup_.quaternion.copy(object.quaternion);
     }
-    object.lookAt(this.camera_.position);
+
     this.cssScene_.add(object);
     return { container, object };
   }
@@ -342,49 +424,56 @@ class FirstPersonCameraDemo {
   }
 
   realignHitboxes_(container, object) {
-    this.interactionPlanes_.forEach(plane => plane.parent.remove(plane));
-    this.interactionPlanes_ = [];
+    this.hitboxGroup_.clear();
 
     setTimeout(() => {
-        this.cssScene_.updateMatrixWorld(true);
-        this.choiceButtons_.forEach((button, index) => {
+        // This sync is still required to place the hitbox group correctly.
+        this.hitboxGroup_.position.copy(object.position);
+        this.hitboxGroup_.quaternion.copy(object.quaternion);
+
+        const buttons = this.choiceButtons_;
+        const numButtons = buttons.length;
+        const planeMat = new THREE.MeshBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.6, side: THREE.DoubleSide }); // BRIGHT PINK
+
+        buttons.forEach((button, index) => {
             button.classList.remove('disabled');
+            let plane;
 
-            // --- BRUTE FORCE FIX ---
-            // This is the special case for the "Continue" button, which is always alone.
-            if (this.choiceButtons_.length === 1) {
-              const plane = new THREE.Mesh(
-                  new THREE.PlaneGeometry(946, 46), // Use the exact size from the debug logs
-                  new THREE.MeshBasicMaterial({color: 0x000000, transparent: true, opacity: 0.0, side: THREE.DoubleSide}) // Make it invisible
-              );
-              // Manually calculated position to align with the button at the bottom of the dialog.
-              plane.position.set(0, -220, 1);
-              plane.name = `choice-${index}`;
-              object.add(plane);
-              this.interactionPlanes_.push(plane);
-            } 
-            // This is the normal case for the multiple-choice buttons, which we know works.
-            else {
-              const planeWidth = button.offsetWidth;
-              const planeHeight = button.offsetHeight;
-
-              const plane = new THREE.Mesh(
-                  new THREE.PlaneGeometry(planeWidth, planeHeight), 
-                  new THREE.MeshBasicMaterial({color: 0x000000, transparent: true, opacity: 0.0, side: THREE.DoubleSide})
-              );
-              
-              const buttonRect = button.getBoundingClientRect();
-              const containerRect = container.getBoundingClientRect();
-              const x = buttonRect.left + (buttonRect.width / 2) - containerRect.left - (containerRect.width / 2);
-              const y = -(buttonRect.top + (buttonRect.height / 2) - containerRect.top - (containerRect.height / 2));
-              plane.position.set(x, y, 1);
-
-              plane.name = `choice-${index}`;
-              object.add(plane);
-              this.interactionPlanes_.push(plane);
+            // BRUTE FORCE LOGIC based on number of buttons
+            if (numButtons === 1) {
+                // Assumed to be "Continue..." or a single final choice.
+                plane = new THREE.Mesh(new THREE.PlaneGeometry(950, 70), planeMat);
+                plane.position.set(0, -245, 1); 
+            } else if (numButtons === 2) {
+                // Standard two-choice layout
+                const planeGeo = new THREE.PlaneGeometry(460, 70);
+                plane = new THREE.Mesh(planeGeo, planeMat);
+                const xPos = (index === 0) ? -245 : 245;
+                plane.position.set(xPos, -210, 1);
+            } else if (numButtons === 3) {
+                 // The layout for the first scenario
+                if (index < 2) { // The top two buttons
+                    const planeGeo = new THREE.PlaneGeometry(460, 70);
+                    plane = new THREE.Mesh(planeGeo, planeMat);
+                    const xPos = (index === 0) ? -245 : 245;
+                    plane.position.set(xPos, -180, 1);
+                } else { // The bottom, full-width button
+                    plane = new THREE.Mesh(new THREE.PlaneGeometry(950, 70), planeMat);
+                    plane.position.set(0, -265, 1);
+                }
+            } else {
+                 // Fallback for any other number of buttons. It will just stack them.
+                const planeGeo = new THREE.PlaneGeometry(950, 70);
+                plane = new THREE.Mesh(planeGeo, planeMat);
+                plane.position.set(0, -180 - (index * 85), 1);
+            }
+            
+            if (plane) {
+                plane.name = `choice-${index}`;
+                this.hitboxGroup_.add(plane);
             }
         });
-    }, 200);
+    }, 500);
   }
 
   initializeRenderer_() {
@@ -524,7 +613,9 @@ class FirstPersonCameraDemo {
   updateInteractions_(time) {
     if (this.controls_.isLocked) {
       this.raycaster_.setFromCamera(new THREE.Vector2(), this.camera_);
-      const intersects = this.raycaster_.intersectObjects(this.interactionPlanes_, true);
+      
+      const targets = this.hitboxGroup_.children;
+      const intersects = this.raycaster_.intersectObjects(targets, true);
 
       this.choiceButtons_.forEach(button => button.classList.remove('hovered'));
 
