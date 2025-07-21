@@ -3,7 +3,7 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { CSS3DRenderer, CSS3DObject } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
-import { ScenarioTree } from './ethics-ed-game/js/scenarios.js';
+import { ScenarioTree } from './scenarios.js';
 import { sendGameDataToMindStudio } from './js/analysis.js';
 
 class FirstPersonCameraDemo {
