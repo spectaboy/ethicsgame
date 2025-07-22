@@ -450,11 +450,31 @@ class FirstPersonCameraDemo {
         if (score >= 30) return 'D';
         return 'F';
     };
+
+    const getGradeColor = (grade) => {
+      switch (grade) {
+        case 'A+':
+        case 'A':
+          return '#4CAF50'; // Green
+        case 'B':
+          return '#8BC34A'; // Light Green
+        case 'C':
+          return '#FFC107'; // Orange
+        case 'D':
+          return '#FF5722'; // Deep Orange
+        case 'F':
+          return '#F44336'; // Red
+        default:
+          return '#607D8B'; // Grey for fallback
+      }
+    };
+
     const currentGrade = getLetterGrade(this.metrics.academicStanding);
+    const gradeColor = getGradeColor(currentGrade);
 
     const gradePanel = document.createElement('div');
     gradePanel.className = 'current-grade';
-    gradePanel.innerHTML = `<h3>Current Grade</h3><div class="grade">${currentGrade}</div>`;
+    gradePanel.innerHTML = `<h3>Current Grade</h3><div class="grade" style="background-color: ${gradeColor}; color: #FFFFFF;">${currentGrade}</div>`;
     container.appendChild(gradePanel);
 
     const rulesPanel = document.createElement('div');
